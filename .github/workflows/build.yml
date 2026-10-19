@@ -1,0 +1,378 @@
+name: Build Chaudhary APK
+on:
+  workflow_dispatch:
+  push:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+      - name: Generate project
+        run: |
+          mkdir -p src/main/java/com/chaudhary/assistant src/main/res/xml src/main/res/values
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "Chaudhary"
+          EOF
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.5.2"
+              id("org.jetbrains.kotlin.android") version "1.9.24"
+          }
+          android {
+              namespace = "com.chaudhary.assistant"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.chaudhary.assistant"
+                  minSdk = 28
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+          EOF
+          cat > src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="app_name">Chaudhary</string>
+              <string name="a11y_desc">Lets Chaudhary tap, scroll, type and control apps by voice.</string>
+          </resources>
+          EOF
+          cat > src/main/res/xml/a11y.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+              android:accessibilityEventTypes="typeWindowStateChanged"
+              android:accessibilityFeedbackType="feedbackGeneric"
+              android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews"
+              android:canPerformGestures="true"
+              android:canRetrieveWindowContent="true"
+              android:notificationTimeout="100"
+              android:description="@string/a11y_desc" />
+          EOF
+          cat > src/main/res/xml/admin.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-policies><force-lock /></uses-policies>
+          </device-admin>
+          EOF
+          cat > src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.SET_ALARM" />
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.CALL_PHONE" />
+              <uses-permission android:name="android.permission.SEND_SMS" />
+              <uses-permission android:name="android.permission.READ_CONTACTS" />
+              <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+              <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+              <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+              <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+              <queries>
+                  <intent><action android:name="android.speech.RecognitionService" /></intent>
+                  <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+                  <intent>
+                      <action android:name="android.intent.action.MAIN" />
+                      <category android:name="android.intent.category.LAUNCHER" />
+                  </intent>
+              </queries>
+              <application
+                  android:allowBackup="false"
+                  android:label="@string/app_name"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <activity
+                      android:name=".UnlockActivity"
+                      android:exported="false"
+                      android:excludeFromRecents="true"
+                      android:showWhenLocked="true"
+                      android:turnScreenOn="true"
+                      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+                  <service
+                      android:name=".VoiceService"
+                      android:exported="false"
+                      android:foregroundServiceType="microphone" />
+                  <service
+                      android:name=".AssistantAccessibilityService"
+                      android:exported="true"
+                      android:label="@string/app_name"
+                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.accessibilityservice.AccessibilityService" />
+                      </intent-filter>
+                      <meta-data android:name="android.accessibilityservice" android:resource="@xml/a11y" />
+                  </service>
+                  <service
+                      android:name=".NotifListener"
+                      android:exported="true"
+                      android:label="@string/app_name"
+                      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.service.notification.NotificationListenerService" />
+                      </intent-filter>
+                  </service>
+                  <receiver
+                      android:name=".ChaudharyAdmin"
+                      android:exported="true"
+                      android:permission="android.permission.BIND_DEVICE_ADMIN">
+                      <meta-data android:name="android.app.device_admin" android:resource="@xml/admin" />
+                      <intent-filter>
+                          <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                      </intent-filter>
+                  </receiver>
+              </application>
+          </manifest>
+          EOF
+          cat > src/main/java/com/chaudhary/assistant/Chaudhary.kt <<'EOF'
+          package com.chaudhary.assistant
+
+          import android.Manifest
+          import android.accessibilityservice.AccessibilityService
+          import android.accessibilityservice.GestureDescription
+          import android.app.Activity
+          import android.app.ActivityManager
+          import android.app.KeyguardManager
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.app.Service
+          import android.app.admin.DeviceAdminReceiver
+          import android.app.admin.DevicePolicyManager
+          import android.content.ComponentName
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.content.pm.ApplicationInfo
+          import android.content.pm.PackageManager
+          import android.content.pm.ServiceInfo
+          import android.graphics.Path
+          import android.graphics.Rect
+          import android.graphics.drawable.Icon
+          import android.hardware.camera2.CameraCharacteristics
+          import android.hardware.camera2.CameraManager
+          import android.media.AudioManager
+          import android.net.Uri
+          import android.os.BatteryManager
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.Environment
+          import android.os.Handler
+          import android.os.IBinder
+          import android.os.Looper
+          import android.os.PowerManager
+          import android.os.StatFs
+          import android.provider.AlarmClock
+          import android.provider.ContactsContract
+          import android.provider.Settings
+          import android.service.notification.NotificationListenerService
+          import android.service.notification.StatusBarNotification
+          import android.speech.RecognitionListener
+          import android.speech.RecognizerIntent
+          import android.speech.SpeechRecognizer
+          import android.speech.tts.TextToSpeech
+          import android.speech.tts.UtteranceProgressListener
+          import android.telephony.SmsManager
+          import android.view.WindowManager
+          import android.view.accessibility.AccessibilityEvent
+          import android.view.accessibility.AccessibilityNodeInfo
+          import android.widget.Button
+          import android.widget.EditText
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.Switch
+          import android.widget.TextView
+          import android.widget.Toast
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.net.URLEncoder
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          // ======================= PREFS =======================
+          object Prefs {
+              const val DEFAULT_MACROS = "# name = step ; step ; step\n# steps: tap X Y | swipe X1 Y1 X2 Y2 MS | wait MS | click TEXT | back | home\n# example: fire = tap 1850 650 ; wait 200 ; tap 1850 650\n"
+              private fun sp(c: Context) = c.getSharedPreferences("chaudhary", Context.MODE_PRIVATE)
+              fun lang(c: Context): String = sp(c).getString("lang", "hi-IN") ?: "hi-IN"
+              fun setLang(c: Context, v: String) = sp(c).edit().putString("lang", v).apply()
+              fun apiKey(c: Context): String = sp(c).getString("key", "") ?: ""
+              fun setApiKey(c: Context, v: String) = sp(c).edit().putString("key", v.trim()).apply()
+              fun wake(c: Context): Boolean = sp(c).getBoolean("wake", true)
+              fun setWake(c: Context, v: Boolean) = sp(c).edit().putBoolean("wake", v).apply()
+              fun macros(c: Context): String = sp(c).getString("macros", DEFAULT_MACROS) ?: DEFAULT_MACROS
+              fun setMacros(c: Context, v: String) = sp(c).edit().putString("macros", v).apply()
+              fun pick(c: Context, hi: String, en: String): String = if (lang(c) == "en-IN") en else hi
+          }
+
+          // ======================= HARDWARE / PROTECTION HELPERS =======================
+          data class Bat(val level: Int, val tempC: Float, val charging: Boolean)
+
+          object Hw {
+              var torchOn = false
+
+              fun setTorch(c: Context, on: Boolean): Boolean = try {
+                  val cm = c.getSystemService(CameraManager::class.java)
+                  val id = cm.cameraIdList.first { cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
+                  cm.setTorchMode(id, on); torchOn = on; true
+              } catch (e: Exception) { false }
+
+              fun setBrightness(c: Context, v: Int): Boolean {
+                  if (!Settings.System.canWrite(c)) return false
+                  Settings.System.putInt(c.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+                  Settings.System.putInt(c.contentResolver, Settings.System.SCREEN_BRIGHTNESS, v.coerceIn(1, 255))
+                  return true
+              }
+
+              fun lock(c: Context): Boolean {
+                  val dpm = c.getSystemService(DevicePolicyManager::class.java)
+                  if (dpm.isAdminActive(ComponentName(c, ChaudharyAdmin::class.java))) { dpm.lockNow(); return true }
+                  return AssistantAccessibilityService.instance?.lockScreen() ?: false
+              }
+
+              /** Kills background processes of user-installed apps only (never system apps). */
+              fun killBackground(c: Context): Int {
+                  val am = c.getSystemService(ActivityManager::class.java)
+                  val list = c.packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+                  var n = 0
+                  for (r in list) {
+                      val p = r.activityInfo.packageName
+                      if (p == c.packageName) continue
+                      if ((r.activityInfo.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0) continue
+                      am.killBackgroundProcesses(p); n++
+                  }
+                  return n
+              }
+
+              fun batterySaver(c: Context) {
+                  val acc = AssistantAccessibilityService.instance ?: return
+                  try { c.startActivity(Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) { return }
+                  val h = Handler(Looper.getMainLooper())
+                  h.postDelayed({
+                      if (!acc.clickAny("Turn on now", "Turn on", "अभी चालू करें")) acc.toggleSwitch(true)
+                      h.postDelayed({ acc.home() }, 900)
+                  }, 2000)
+              }
+
+              fun battery(c: Context): Bat {
+                  val i = c.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                  val lv = i?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                  val sc = i?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+                  val temp = (i?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10f
+                  val plug = i?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+                  return Bat(if (lv < 0) 0 else lv * 100 / sc, temp, plug != 0)
+              }
+
+              fun ramFreePct(c: Context): Int {
+                  val mi = ActivityManager.MemoryInfo()
+                  c.getSystemService(ActivityManager::class.java).getMemoryInfo(mi)
+                  return (mi.availMem * 100 / mi.totalMem).toInt()
+              }
+
+              fun diskFreePct(): Int {
+                  val st = StatFs(Environment.getDataDirectory().path)
+                  return (st.availableBytes * 100 / st.totalBytes).toInt()
+              }
+
+              fun status(c: Context): String {
+                  val b = battery(c)
+                  return Prefs.pick(c,
+                      "बैटरी ${b.level} प्रतिशत, तापमान ${b.tempC.toInt()} डिग्री, रैम ${ramFreePct(c)} प्रतिशत खाली, स्टोरेज ${diskFreePct()} प्रतिशत खाली",
+                      "Battery ${b.level} percent, temperature ${b.tempC.toInt()} degrees, ${ramFreePct(c)} percent RAM free, ${diskFreePct()} percent storage free")
+              }
+          }
+
+          // ======================= SAFETY MONITOR (warn first, then act) =======================
+          class SafetyMonitor(private val c: Context, private val speak: (String) -> Unit) {
+              private val h = Handler(Looper.getMainLooper())
+              private val last = HashMap<String, Long>()
+              private var lastLevel = -1
+              private var lastLevelTime = 0L
+              private var primed = false
+              private val known = HashSet<String>()
+              private val tick = object : Runnable {
+                  override fun run() {
+                      try { check() } catch (e: Exception) { }
+                      h.postDelayed(this, 30000)
+                  }
+              }
+
+              fun start() { h.postDelayed(tick, 10000) }
+              fun stop() { h.removeCallbacksAndMessages(null) }
+
+              private fun cool(k: String, ms: Long = 600000L): Boolean {
+                  val n = System.currentTimeMillis()
+                  if (n - (last[k] ?: 0L) < ms) return false
+                  last[k] = n; return true
+              }
+
+              private fun warnThenAct(hi: String, en: String, act: () -> Unit) {
+                  speak(Prefs.pick(c, hi, en))
+                  h.postDelayed({ try { act() } catch (e: Exception) { } }, 6000)
+              }
+
+              private fun check() {
+                  val b = Hw.battery(c)
+                  val thermal = if (Build.VERSION.SDK_INT >= 29) c.getSystemService(PowerManager::class.java).currentThermalStatus else 0
+
+                  if ((b.tempC >= 48f || thermal >= 4) && cool("crit", 120000L)) {
+                      warnThenAct("चेतावनी! फोन खतरनाक रूप से गर्म है। मैं अभी स्क्रीन लॉक कर रहा हूँ। कृपया चार्जर हटा दें।",
+                          "Warning! The phone is dangerously hot. Locking the screen now. Please unplug the charger.") {
+                          Hw.setTorch(c, false); Hw.killBackground(c); Hw.lock(c)
+                      }
+                  } else if ((b.tempC >= 44f || thermal >= 3) && cool("hot")) {
+                      warnThenAct("फोन बहुत गर्म हो रहा है। मैं बैकग्राउंड ऐप बंद कर रहा हूँ और स्क्रीन की रोशनी कम कर रहा हूँ।",
+                          "The phone is getting very hot. Closing background apps and dimming the screen.") {
+                          Hw.setTorch(c, false); Hw.killBackground(c); Hw.setBrightness(c, 40)
+                      }
+                  }
+
+                  if (!b.charging && b.level in 1..15 && cool("low")) {
+                      warnThenAct("बैटरी सिर्फ ${b.level} प्रतिशत बची है। मैं बैटरी सेवर चालू कर रहा हूँ।",
+                          "Battery is only ${b.level} percent. Turning on battery saver.") {
+                          Hw.killBackground(c); Hw.setBrightness(c, 50); Hw.batterySaver(c)
+                      }
+                  }
+
+                  val now = System.currentTimeMillis()
+                  if (lastLevel < 0) { lastLevel = b.level; lastLevelTime = now }
+                  else if (now - lastLevelTime >= 600000L) {
+                      val drop = lastLevel - b.level
+                      if (!b.charging && drop >= 6 && cool("drain", 1800000L)) {
+                          warnThenAct("बैटरी बहुत तेज़ी से खत्म हो रही है। मैं बैकग्राउंड ऐप बंद कर रहा हूँ।",
+                              "Battery is draining unusually fast. Closing background apps.") { Hw.killBackground(c) }
+                      }
+                      lastLevel = b.level; lastLevelTime = now
+                  }
+
+                  val ram = Hw.ramFreePct(c)
+                  if (ram < 8 && cool("ram")) {
+                      warnThenAct("रैम लगभग भर गई है। मैं बैकग्राउंड ऐप बंद कर रहा हूँ।",
+                          "Memory is almost full. Closing background apps.") { Hw.killBackground(c) }
+                  }
+
+                  if (Hw.diskFreePct() < 5 && cool("disk", 3600000L)) {
+                      speak(Prefs.pick(c, "स्टोर
